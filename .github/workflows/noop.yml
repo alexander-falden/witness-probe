@@ -1,0 +1,26 @@
+# noop: a dispatch target that does nothing (P12-40, GO-2).
+#
+# Two uses. The merge-queue measurement dispatches it twice, each time just after an attest
+# dispatch, so the newest dispatch run is deliberately the wrong one and a lookup that takes it
+# (p4b.sh:20) is shown to fail where a lookup by workflow file and head_sha does not. Those are its
+# only two runs. The token preflight's least-privilege probe (P12-04) names it too: each fixture
+# token is asked to dispatch it on a branch that does not exist, so no run starts. No fixture
+# token's role dispatches a workflow, so each should be refused, and a refusal shows the token
+# lacks that permission.
+name: noop
+run-name: noop ${{ inputs.event_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      event_id:
+        description: The probe's id for this dispatch
+        required: false
+        default: none
+        type: string
+permissions: {}
+jobs:
+  noop:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Do nothing
+        run: "true"

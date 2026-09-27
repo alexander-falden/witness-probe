@@ -1,0 +1,50 @@
+# attest: the witness probe's hand-written attestation workflow (P12-40, GO-2). P12-38 builds the
+# 1.0 one from what this measures.
+#
+# It runs only when dispatched, never on a push: a push-triggered attestation would sign whatever
+# the pusher chose, at the moment the pusher chose (P12-38). It writes one small statement,
+# witness.json, naming the event id it was given, the repository id, and the ref and commit the
+# dispatch ran on, and signs it through GitHub Actions OIDC. The repository is public, so the
+# signature goes to the public-good Sigstore instance and its public Rekor log, where the probe
+# reads it back to learn which ref and sha the entry claims.
+#
+# The statement's bytes are fixed by those four values, so the dispatcher computes the same sha256
+# locally and finds the attestation by digest. Nothing is checked out.
+#
+# The action is named by its major tag in this file. At GO-2 the probe's setup step resolves the tag
+# to a commit sha with a read-only GET and pushes the pinned copy; the results record the pin.
+name: attest
+run-name: attest ${{ inputs.event_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      event_id:
+        description: The probe's id for the event this run witnesses
+        required: true
+        type: string
+permissions: {}
+jobs:
+  attest:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Write the statement
+        env:
+          EVENT_ID: ${{ inputs.event_id }}
+          REPO_ID: ${{ github.repository_id }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+        run: |
+          case "$EVENT_ID" in ''|*[!A-Za-z0-9._-]*) echo "event_id must match [A-Za-z0-9._-]+"; exit 1 ;; esac
+          case "$REF" in *'"'*|*'\'*) echo "the ref holds a character the statement cannot carry"; exit 1 ;; esac
+          printf '{"event_id":"%s","ref":"%s","repository_id":%s,"sha":"%s"}\n' \
+            "$EVENT_ID" "$REF" "$REPO_ID" "$SHA" > witness.json
+          cat witness.json
+          sha256sum witness.json
+      - name: Attest the statement
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-path: witness.json
